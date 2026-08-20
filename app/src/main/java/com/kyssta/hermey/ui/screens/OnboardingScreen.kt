@@ -6,8 +6,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.foundation.Image
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.painterResource
+import com.kyssta.hermey.R
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -67,7 +71,14 @@ fun OnboardingScreen(
 
     Scaffold(topBar = {
         TopAppBar(
-            title = { Text("Hermex") },
+            title = {
+                Image(
+                    painter = painterResource(id = R.drawable.hermey_logo),
+                    contentDescription = "HERMEY",
+                    modifier = Modifier.height(28.dp),
+                    contentScale = ContentScale.Fit
+                )
+            },
             colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = HermesColors.Surface,
                 titleContentColor = HermesColors.OnSurface
