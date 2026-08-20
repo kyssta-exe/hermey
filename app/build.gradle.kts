@@ -25,9 +25,9 @@ android {
     signingConfigs {
         create("release") {
             storeFile = file("../keystore/hermey-release.keystore")
-            storePassword = "hermey123"
-            keyAlias = "hermey"
-            keyPassword = "hermey123"
+            storePassword = (project.findProperty("KEYSTORE_PASSWORD") as String?) ?: System.getenv("KEYSTORE_PASSWORD")
+            keyAlias = (project.findProperty("KEY_ALIAS") as String?) ?: System.getenv("KEY_ALIAS")
+            keyPassword = (project.findProperty("KEY_PASSWORD") as String?) ?: System.getenv("KEY_PASSWORD")
         }
     }
     buildTypes {

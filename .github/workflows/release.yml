@@ -22,7 +22,17 @@ jobs:
           cmdline-tools-version: 11076708
           ndk-version: 27.1.12297006
       - run: echo "sdk.dir=$ANDROID_HOME" > local.properties
+      - name: Decode keystore from secret
+        run: |
+          mkdir -p keystore
+          echo "$KEYSTORE_BASE64" | base64 -d > keystore/hermey-release.keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
       - run: ./gradlew assembleRelease --no-daemon --stacktrace
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
       - uses: softprops/action-gh-release@v2
         with:
           files: app/build/outputs/apk/release/app-release.apk
