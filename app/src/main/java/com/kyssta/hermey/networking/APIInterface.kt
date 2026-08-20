@@ -184,7 +184,7 @@ object SharedCookieJar : okhttp3.CookieJar {
     fun saveFromResponseString(url: okhttp3.HttpUrl, setCookieHeaders: List<String>) {
         val parsed = mutableListOf<okhttp3.Cookie>()
         for (header in setCookieHeaders) {
-            parsed.add(okhttp3.Cookie.parse(url, header))
+            okhttp3.Cookie.parse(url, header)?.let { parsed.add(it) }
         }
         if (parsed.isNotEmpty()) {
             cookies[url.host] = (cookies[url.host] ?: emptyList()) + parsed.filter { it.expiresAt >= System.currentTimeMillis() }
