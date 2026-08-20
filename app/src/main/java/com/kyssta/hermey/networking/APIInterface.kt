@@ -176,7 +176,7 @@ fun createApiClient(baseUrl: String): HermexApi {
     return Retrofit.Builder()
         .baseUrl(baseUrl)
         .client(client)
-        .addConverterFactory(GsonConverterFactory.create())
+        .addConverterFactory(GsonConverterFactory.create(GsonSingleton.instance))
         .build()
         .create(HermexApi::class.java)
 }

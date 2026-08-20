@@ -87,8 +87,8 @@ class AuthManager @Inject constructor(
         try {
             val url = normalizeUrl(serverUrlString) ?: return@withContext Result.failure(APIError.InvalidServerURL)
             val api = createApiClient(url)
-            val health = api.health()
-            if (health.status != "ok") return@withContext Result.failure(APIError.HTTP(200, "Unexpected health status: ${health.status}"))
+            // Skip /health — it redirects to /login (HTML) on authenticated gateways.
+            // /api/auth/status returns JSON regardless and tells us the auth contract.
             val authStatus = api.authStatus()
             Result.success(authStatus)
         } catch (e: Exception) {
