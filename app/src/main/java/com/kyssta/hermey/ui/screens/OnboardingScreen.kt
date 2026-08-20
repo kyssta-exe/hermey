@@ -71,14 +71,7 @@ fun OnboardingScreen(
 
     Scaffold(topBar = {
         TopAppBar(
-            title = {
-                Image(
-                    painter = painterResource(id = R.drawable.hermey_logo),
-                    contentDescription = "HERMEY",
-                    modifier = Modifier.height(28.dp),
-                    contentScale = ContentScale.Fit
-                )
-            },
+            title = { Text("HERMEY") },
             colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = HermesColors.Surface,
                 titleContentColor = HermesColors.OnSurface
@@ -93,6 +86,14 @@ fun OnboardingScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            Image(
+                painter = painterResource(id = R.drawable.hermey_logo),
+                contentDescription = "HERMEY",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp),
+                contentScale = ContentScale.Fit
+            )
             Text(
                 "Connect to your Hermes server",
                 style = MaterialTheme.typography.headlineSmall,

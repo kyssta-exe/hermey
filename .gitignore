@@ -16,9 +16,12 @@ local.properties
 *.ap_
 *.aab
 *.dex
-*.keystore
 .cxx/
 .externalNativeBuild/
+
+# Secrets
+*.keystore
+keystore/
 
 # Misc
 .DS_Store
