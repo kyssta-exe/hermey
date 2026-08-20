@@ -21,17 +21,20 @@ import java.util.concurrent.TimeUnit
 // ─── API Interface ────────────────────────────────────────────────────────────
 interface HermexApi {
     // Auth
-    @GET(Endpoints.HEALTH)
+    @GET("/health")
     suspend fun health(): HealthResponse
 
-    @GET(Endpoints.AUTH_STATUS)
-    suspend fun authStatus(): AuthStatusResponse
+    @GET("/api/auth/providers")
+    suspend fun getAuthProviders(): AuthProvidersResponse
 
-    @POST(Endpoints.AUTH_LOGIN)
-    suspend fun login(@Body body: JsonElement): LoginResponse
+    @POST("/auth/password-login")
+    suspend fun passwordLogin(@Body body: JsonElement): LoginResponse
 
-    @POST(Endpoints.AUTH_LOGOUT)
+    @POST("/auth/logout")
     suspend fun logout(): LoginResponse
+
+    @GET("/api/auth/me")
+    suspend fun authMe(): AuthMeResponse
 
     // Sessions
     @GET(Endpoints.SESSIONS)
@@ -163,11 +166,38 @@ interface HermexApi {
 }
 
 // ─── Client Factory ───────────────────────────────────────────────────────────
+
+// Shared cookie jar — persists session cookies across all requests (login → API calls)
+object SharedCookieJar : okhttp3.CookieJar {
+    private val cookies = java.util.concurrent.ConcurrentHashMap<String, List<okhttp3.Cookie>>()
+
+    override fun saveFromResponse(url: okhttp3.HttpUrl, cookies: List<okhttp3.Cookie>) {
+        this.cookies[url.host] = cookies
+    }
+
+    override fun loadForRequest(url: okhttp3.HttpUrl): List<okhttp3.Cookie> {
+        return cookies[url.host] ?: emptyList()
+    }
+
+    fun clear() { cookies.clear() }
+
+    fun saveFromResponseString(url: okhttp3.HttpUrl, setCookieHeaders: List<String>) {
+        val parsed = mutableListOf<okhttp3.Cookie>()
+        for (header in setCookieHeaders) {
+            parsed.add(okhttp3.Cookie.parse(url, header))
+        }
+        if (parsed.isNotEmpty()) {
+            cookies[url.host] = (cookies[url.host] ?: emptyList()) + parsed.filter { it.expiresAt >= System.currentTimeMillis() }
+        }
+    }
+}
+
 fun createApiClient(baseUrl: String): HermexApi {
     val client = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(300, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
+        .cookieJar(SharedCookieJar)
         .addInterceptor(HttpLoggingInterceptor().apply {
             level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BODY else HttpLoggingInterceptor.Level.NONE
         })
@@ -200,6 +230,7 @@ class SSEClient(
                 val okHttpClient = OkHttpClient.Builder()
                     .connectTimeout(30, TimeUnit.SECONDS)
                     .readTimeout(300, TimeUnit.SECONDS)
+                    .cookieJar(SharedCookieJar)
                     .build()
 
                 val request = okhttp3.Request.Builder()

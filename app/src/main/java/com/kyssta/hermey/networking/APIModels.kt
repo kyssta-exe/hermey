@@ -11,6 +11,21 @@ data class AuthStatusResponse(
 )
 data class LoginResponse(@SerializedName("ok") val ok: Boolean? = null)
 
+// ─── Real gateway auth models ────────────────────────────────────────────────
+data class AuthProvider(
+    @SerializedName("name") val name: String? = null,
+    @SerializedName("display_name") val displayName: String? = null,
+    @SerializedName("supports_password") val supportsPassword: Boolean? = null,
+)
+data class AuthProvidersResponse(
+    @SerializedName("providers") val providers: List<AuthProvider> = emptyList(),
+)
+data class AuthMeResponse(
+    @SerializedName("authenticated") val authenticated: Boolean? = null,
+    @SerializedName("username") val username: String? = null,
+    @SerializedName("provider") val provider: String? = null,
+)
+
 // ─── Session models ───────────────────────────────────────────────────────────
 data class SessionSummary(
     @SerializedName("session_id") val sessionId: String? = null,

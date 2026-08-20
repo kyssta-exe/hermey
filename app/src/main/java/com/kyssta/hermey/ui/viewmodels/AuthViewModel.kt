@@ -20,12 +20,12 @@ class AuthViewModel @Inject constructor(
     val lastError: StateFlow<String?> = authManager.lastError
     val customHeaders: StateFlow<List<CustomHeader>> = authManager.customHeaders
 
-    fun testConnection(url: String): Flow<Result<AuthStatusResponse>> = flow {
+    fun testConnection(url: String): Flow<Result<AuthProvidersResponse>> = flow {
         emit(authManager.testConnection(url))
     }
 
-    fun login(serverUrl: String, password: String): Flow<Result<Unit>> = flow {
-        emit(authManager.login(serverUrl, password))
+    fun login(serverUrl: String, username: String, password: String, provider: String = "basic"): Flow<Result<Unit>> = flow {
+        emit(authManager.login(serverUrl, username, password, provider))
     }
 
     fun logout() {

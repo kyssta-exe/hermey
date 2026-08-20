@@ -83,35 +83,37 @@ class AuthManager @Inject constructor(
         }
     }
 
-    suspend fun testConnection(serverUrlString: String): Result<AuthStatusResponse> = withContext(Dispatchers.IO) {
+    suspend fun testConnection(serverUrlString: String): Result<AuthProvidersResponse> = withContext(Dispatchers.IO) {
         try {
             val url = normalizeUrl(serverUrlString) ?: return@withContext Result.failure(APIError.InvalidServerURL)
             val api = createApiClient(url)
-            // Skip /health — it redirects to /login (HTML) on authenticated gateways.
-            // /api/auth/status returns JSON regardless and tells us the auth contract.
-            val authStatus = api.authStatus()
-            Result.success(authStatus)
+            // /api/auth/providers is unauthenticated and tells us what login methods the server supports
+            val providers = api.getAuthProviders()
+            Result.success(providers)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
-    suspend fun login(serverUrlString: String, password: String): Result<Unit> = withContext(Dispatchers.IO) {
+    suspend fun login(serverUrlString: String, username: String, password: String, provider: String = "basic"): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             val url = normalizeUrl(serverUrlString) ?: return@withContext Result.failure(APIError.InvalidServerURL)
             val api = createApiClient(url)
-            val authStatus = api.authStatus()
 
-            if (authStatus.authEnabled == true && authStatus.passwordAuthEnabled == false) {
-                return@withContext Result.failure(Exception("This server uses passkey auth only — not supported yet"))
+            // POST /auth/password-login → sets session cookie via SharedCookieJar
+            val loginBody = com.google.gson.JsonObject().apply {
+                addProperty("provider", provider)
+                addProperty("username", username)
+                addProperty("password", password)
             }
+            val loginResp = api.passwordLogin(loginBody)
+            if (loginResp.ok != true) return@withContext Result.failure(APIError.Unauthorized)
 
-            if (authStatus.authEnabled == true) {
-                val loginJsonObj = com.google.gson.JsonObject().apply {
-                    addProperty("password", password)
-                }
-                val loginResp = api.login(loginJsonObj)
-                if (loginResp.ok != true) return@withContext Result.failure(APIError.Unauthorized)
+            // Verify session is valid
+            try {
+                api.authMe()
+            } catch (e: Exception) {
+                return@withContext Result.failure(APIError.Unauthorized)
             }
 
             keychain.save(url, "server_url")
@@ -150,6 +152,7 @@ class AuthManager @Inject constructor(
         _activeServerId.value = null
         _api = null
         _baseUrl = null
+        SharedCookieJar.clear()
         keychain.delete("server_url")
     }
 
