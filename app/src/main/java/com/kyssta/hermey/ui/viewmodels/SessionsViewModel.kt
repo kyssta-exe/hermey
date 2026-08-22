@@ -3,7 +3,6 @@ package com.kyssta.hermey.ui.viewmodels
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kyssta.hermey.auth.AuthManager
-import com.kyssta.hermey.auth.AuthState
 import com.kyssta.hermey.networking.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
@@ -28,11 +27,11 @@ class SessionsViewModel @Inject constructor(
             _loading.value = true
             _error.value = null
             try {
-                val api = authManager.api
-                val response = api.getSessions(mapOf("include_archived" to "0"))
-                _sessions.value = response.sessions ?: emptyList()
+                // order=recent keeps long-running chats at the top across compression.
+                val response = authManager.api.getSessions(mapOf("limit" to "50", "order" to "recent"))
+                _sessions.value = response.sessions
             } catch (e: Exception) {
-                _error.value = e.message
+                _error.value = apiErrorMessage(e)
             } finally {
                 _loading.value = false
             }
@@ -42,13 +41,23 @@ class SessionsViewModel @Inject constructor(
     fun deleteSession(sessionId: String) {
         viewModelScope.launch {
             try {
-                val api = authManager.api
-                api.deleteSession(com.google.gson.JsonObject().apply {
-                    addProperty("session_id", sessionId)
+                authManager.api.deleteSession(sessionId)
+                loadSessions()
+            } catch (e: Exception) {
+                _error.value = apiErrorMessage(e)
+            }
+        }
+    }
+
+    fun togglePin(sessionId: String, pinned: Boolean) {
+        viewModelScope.launch {
+            try {
+                authManager.api.updateSession(sessionId, com.google.gson.JsonObject().apply {
+                    addProperty("pinned", pinned)
                 })
                 loadSessions()
             } catch (e: Exception) {
-                _error.value = e.message
+                _error.value = apiErrorMessage(e)
             }
         }
     }
@@ -56,13 +65,12 @@ class SessionsViewModel @Inject constructor(
     fun archiveSession(sessionId: String) {
         viewModelScope.launch {
             try {
-                val api = authManager.api
-                api.archiveSession(com.google.gson.JsonObject().apply {
-                    addProperty("session_id", sessionId)
+                authManager.api.updateSession(sessionId, com.google.gson.JsonObject().apply {
+                    addProperty("archived", true)
                 })
                 loadSessions()
             } catch (e: Exception) {
-                _error.value = e.message
+                _error.value = apiErrorMessage(e)
             }
         }
     }

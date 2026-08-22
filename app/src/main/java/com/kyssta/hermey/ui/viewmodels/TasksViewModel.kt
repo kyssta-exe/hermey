@@ -3,8 +3,7 @@ package com.kyssta.hermey.ui.viewmodels
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kyssta.hermey.auth.AuthManager
-import com.kyssta.hermey.networking.CronJob
-import com.kyssta.hermey.networking.CronsResponse
+import com.kyssta.hermey.networking.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -24,29 +23,22 @@ class TasksViewModel @Inject constructor(
         viewModelScope.launch {
             _loading.value = true
             try {
-                val api = authManager.api
-                val response = api.getCrons()
-                _jobs.value = response.jobs ?: emptyList()
-            } catch (e: Exception) {
-                // Error handling
+                _jobs.value = authManager.api.getCrons()
+            } catch (_: Exception) {
+                // leave the current list; next refresh retries
             } finally {
                 _loading.value = false
             }
         }
     }
 
-    fun toggleJob(jobId: String, enabled: Boolean) {
+    fun toggleJob(jobId: String, currentlyPaused: Boolean) {
         viewModelScope.launch {
             try {
                 val api = authManager.api
-                val action = if (enabled) "resume" else "pause"
-                when (action) {
-                    "pause" -> api.pauseCron(jobId)
-                    "resume" -> api.resumeCron(jobId)
-                }
+                if (currentlyPaused) api.resumeCron(jobId) else api.pauseCron(jobId)
                 loadCrons()
-            } catch (e: Exception) {
-                // Error handling
+            } catch (_: Exception) {
             }
         }
     }

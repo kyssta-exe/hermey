@@ -1,16 +1,7 @@
 package com.kyssta.hermey.auth
 
 import android.content.Context
-import android.security.keystore.KeyGenParameterSpec
-import android.security.keystore.KeyProperties
-import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
-import dagger.hilt.components.SingletonComponent
-import java.security.KeyStore
-import javax.crypto.Cipher
-import javax.crypto.KeyGenerator
-import javax.crypto.SecretKey
-import javax.crypto.spec.GCMParameterSpec
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -20,6 +11,7 @@ import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 import com.google.gson.Gson
+import com.google.gson.JsonObject
 import com.google.gson.reflect.TypeToken
 import com.kyssta.hermey.networking.*
 
@@ -41,17 +33,11 @@ class AuthManager @Inject constructor(
     private val _activeServerId = MutableStateFlow<String?>(null)
     val activeServerId: StateFlow<String?> = _activeServerId.asStateFlow()
 
-    private val _lastError = MutableStateFlow<String?>(null)
-    val lastError: StateFlow<String?> = _lastError.asStateFlow()
-
-    private val _customHeaders = MutableStateFlow<List<com.kyssta.hermey.networking.CustomHeader>>(emptyList())
-    val customHeaders: StateFlow<List<com.kyssta.hermey.networking.CustomHeader>> = _customHeaders.asStateFlow()
-
     private var _api: HermexApi? = null
     private var _baseUrl: String? = null
 
     val baseUrl: String? get() = _baseUrl
-    val api: HermexApi get() = _api ?: error("No active server — call restoreSession first")
+    val api: HermexApi get() = _api ?: error("No active server — sign in first")
 
     fun getOrCreateApi(url: String): HermexApi {
         if (_api == null || _baseUrl != url) {
@@ -66,7 +52,8 @@ class AuthManager @Inject constructor(
     }
 
     fun restoreSession() {
-        val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
+        // ponytail: fire-and-forget scope; lives for the process like the old one.
+        val scope = kotlinx.coroutines.CoroutineScope(Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
         scope.launch {
             val savedUrl = keychain.load("server_url").getOrNull()
             if (savedUrl != null) {
@@ -76,7 +63,14 @@ class AuthManager @Inject constructor(
                     _servers.value = savedServers
                     _activeServerId.value = savedServers.find { it.urlString == savedUrl }?.id
                 }
-                _state.value = AuthState.LoggedIn
+                // Cookie may have expired server-side; verify before claiming LoggedIn.
+                try {
+                    getOrCreateApi(savedUrl).authMe()
+                    _state.value = AuthState.LoggedIn
+                } catch (_: Exception) {
+                    SharedCookieJar.clear()
+                    _state.value = AuthState.Unconfigured
+                }
             } else {
                 _state.value = AuthState.Unconfigured
             }
@@ -86,78 +80,90 @@ class AuthManager @Inject constructor(
     suspend fun testConnection(serverUrlString: String): Result<AuthProvidersResponse> = withContext(Dispatchers.IO) {
         try {
             val url = normalizeUrl(serverUrlString) ?: return@withContext Result.failure(APIError.InvalidServerURL)
-            val api = createApiClient(url)
-            // /api/auth/providers is unauthenticated and tells us what login methods the server supports
-            val providers = api.getAuthProviders()
-            Result.success(providers)
+            Result.success(createApiClient(url).getAuthProviders())
         } catch (e: Exception) {
-            Result.failure(e)
+            Result.failure(Exception(apiErrorMessage(e)))
         }
     }
 
-    suspend fun login(serverUrlString: String, username: String, password: String, provider: String = "basic"): Result<Unit> = withContext(Dispatchers.IO) {
-        try {
-            val url = normalizeUrl(serverUrlString) ?: return@withContext Result.failure(APIError.InvalidServerURL)
-            val api = createApiClient(url)
-
-            // POST /auth/password-login → sets session cookie via SharedCookieJar
-            val loginBody = com.google.gson.JsonObject().apply {
-                addProperty("provider", provider)
-                addProperty("username", username)
-                addProperty("password", password)
-            }
-            val loginResp = api.passwordLogin(loginBody)
-            if (loginResp.ok != true) return@withContext Result.failure(APIError.Unauthorized)
-
-            // Verify session is valid
+    suspend fun login(serverUrlString: String, username: String, password: String, provider: String = "basic"): Result<Unit> =
+        withContext(Dispatchers.IO) {
             try {
-                api.authMe()
-            } catch (e: Exception) {
-                return@withContext Result.failure(APIError.Unauthorized)
-            }
+                val url = normalizeUrl(serverUrlString)
+                    ?: return@withContext Result.failure(APIError.InvalidServerURL)
+                val api = createApiClient(url)
 
-            keychain.save(url, "server_url")
-            val currentServers = _servers.value.toMutableList()
-            var found = false
-            for (i in currentServers.indices) {
-                if (currentServers[i].id == url) {
-                    currentServers[i] = currentServers[i].copy(updatedAt = System.currentTimeMillis() / 1000.0)
-                    found = true
-                    break
+                // POST /auth/password-login → 200 {"ok":true} + Set-Cookie session.
+                val resp = api.passwordLogin(JsonObject().apply {
+                    addProperty("provider", provider)
+                    addProperty("username", username)
+                    addProperty("password", password)
+                })
+                if (resp.ok != true) {
+                    return@withContext Result.failure(Exception(resp.detail ?: "Invalid username or password"))
                 }
+
+                // Verify the session cookie actually authenticates.
+                try {
+                    api.authMe()
+                } catch (e: Exception) {
+                    return@withContext Result.failure(Exception(apiErrorMessage(e)))
+                }
+
+                saveServer(url)
+                Result.success(Unit)
+            } catch (e: Exception) {
+                Result.failure(Exception(apiErrorMessage(e)))
             }
-            if (!found) {
-                val hostFallback = url.removePrefix("https://").removePrefix("http://").split(":")[0]
-                currentServers.add(ServerAccount(
-                    id = url, urlString = url,
-                    displayName = hostFallback, initials = hostFallback.take(2).uppercase(),
-                    headerLogoColorHex = "#1EB2AA",
-                    createdAt = System.currentTimeMillis() / 1000.0,
-                    updatedAt = System.currentTimeMillis() / 1000.0
-                ))
-            }
-            _servers.value = currentServers
-            _activeServerId.value = url
-            _state.value = AuthState.LoggedIn
-            getOrCreateApi(url)
-            keychain.save(encodeJsonList(currentServers), "servers")
-            Result.success(Unit)
-        } catch (e: Exception) {
-            Result.failure(e)
         }
+
+    /** Mint a single-use ws ticket for the /api/ws chat socket. */
+    suspend fun mintWsTicket(): Result<String> = withContext(Dispatchers.IO) {
+        try {
+            val ticket = api.wsTicket().ticket
+            if (ticket.isNullOrBlank()) Result.failure(Exception("Could not get stream ticket"))
+            else Result.success(ticket)
+        } catch (e: Exception) {
+            Result.failure(Exception(apiErrorMessage(e)))
+        }
+    }
+
+    private fun saveServer(url: String) {
+        keychain.save(url, "server_url")
+        val currentServers = _servers.value.toMutableList()
+        var found = false
+        for (i in currentServers.indices) {
+            if (currentServers[i].id == url) {
+                currentServers[i] = currentServers[i].copy(updatedAt = System.currentTimeMillis() / 1000.0)
+                found = true
+                break
+            }
+        }
+        if (!found) {
+            val hostFallback = url.removePrefix("https://").removePrefix("http://").split(":")[0]
+            currentServers.add(ServerAccount(
+                id = url, urlString = url,
+                displayName = hostFallback, initials = hostFallback.take(2).uppercase(),
+                headerLogoColorHex = "#1EB2AA",
+                createdAt = System.currentTimeMillis() / 1000.0,
+                updatedAt = System.currentTimeMillis() / 1000.0
+            ))
+        }
+        _servers.value = currentServers
+        _activeServerId.value = url
+        _state.value = AuthState.LoggedIn
+        getOrCreateApi(url)
+        keychain.save(encodeJsonList(currentServers), "servers")
     }
 
     fun logout() {
+        // Best-effort: drop cookies locally; server session expires on its own.
         _state.value = AuthState.Unconfigured
         _activeServerId.value = null
         _api = null
         _baseUrl = null
         SharedCookieJar.clear()
         keychain.delete("server_url")
-    }
-
-    fun setCustomHeaders(headers: List<CustomHeader>) {
-        _customHeaders.value = headers
     }
 
     fun setActiveServer(serverId: String) {
@@ -185,13 +191,8 @@ class AuthManager @Inject constructor(
         keychain.save(encodeJsonList(newServers), "servers")
     }
 
-    fun handleUnauthorized() {
-        _state.value = AuthState.LoggedOut
-        _lastError.value = "Session expired — please sign in again"
-    }
-
     private fun normalizeUrl(raw: String): String? {
-        val trimmed = raw.trim()
+        val trimmed = raw.trim().trimEnd('/')
         if (trimmed.isEmpty()) return null
         val withScheme = if ("://" in trimmed) trimmed else "https://$trimmed"
         return try {
@@ -201,7 +202,7 @@ class AuthManager @Inject constructor(
             val port = uri.port.takeIf { it > 0 }
             val portSuffix = if (port != null && port != 80 && port != 443) ":$port" else ""
             "$scheme://$host$portSuffix"
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             null
         }
     }

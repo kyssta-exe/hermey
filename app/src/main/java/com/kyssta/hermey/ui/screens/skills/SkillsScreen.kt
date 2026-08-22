@@ -12,8 +12,6 @@ import androidx.compose.ui.unit.dp
 import com.kyssta.hermey.networking.SkillInfo
 import com.kyssta.hermey.ui.HermesColors
 import com.kyssta.hermey.ui.viewmodels.SkillsViewModel
-import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.launch
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -22,11 +20,8 @@ fun SkillsScreen() {
     val skillsVm: SkillsViewModel = viewModel()
     val skills by skillsVm.skills.collectAsState()
     val loading by skillsVm.loading.collectAsState()
-    val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) {
-        scope.launch { skillsVm.loadSkills() }
-    }
+    LaunchedEffect(Unit) { skillsVm.loadSkills() }
 
     Scaffold(
         topBar = {
@@ -40,11 +35,11 @@ fun SkillsScreen() {
         }
     ) { padding ->
         if (loading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
         } else if (skills.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 Text("No skills installed", style = MaterialTheme.typography.titleMedium)
             }
         } else {
@@ -53,8 +48,8 @@ fun SkillsScreen() {
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(skills) { skill ->
-                    SkillCard(skill = skill)
+                items(skills, key = { it.name ?: "?" }) { skill ->
+                    SkillCard(skill = skill, onToggle = { skillsVm.toggleSkill(skill.name!!) })
                 }
             }
         }
@@ -62,7 +57,7 @@ fun SkillsScreen() {
 }
 
 @Composable
-fun SkillCard(skill: SkillInfo) {
+fun SkillCard(skill: SkillInfo, onToggle: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = HermesColors.Glass)
@@ -78,25 +73,21 @@ fun SkillCard(skill: SkillInfo) {
                 Text(
                     text = desc,
                     style = MaterialTheme.typography.bodySmall,
-                    color = HermesColors.OnSurfaceVariant
+                    color = HermesColors.OnSurfaceVariant,
+                    maxLines = 3
                 )
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                skill.category?.let { cat ->
-                    Text(
-                        text = cat,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = HermesColors.Primary
-                    )
-                }
                 Text(
                     text = if (skill.enabled == true) "Enabled" else "Disabled",
                     style = MaterialTheme.typography.labelSmall,
                     color = if (skill.enabled == true) HermesColors.Success else HermesColors.Outline
                 )
+                Switch(checked = skill.enabled == true, onCheckedChange = { onToggle() })
             }
         }
     }

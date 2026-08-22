@@ -3,7 +3,7 @@ package com.kyssta.hermey.ui.viewmodels
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kyssta.hermey.auth.AuthManager
-import com.kyssta.hermey.networking.SkillInfo
+import com.kyssta.hermey.networking.*
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -23,11 +23,8 @@ class SkillsViewModel @Inject constructor(
         viewModelScope.launch {
             _loading.value = true
             try {
-                val api = authManager.api
-                val response = api.getSkills()
-                _skills.value = response.skills ?: emptyList()
-            } catch (e: Exception) {
-                // Error handling
+                _skills.value = authManager.api.getSkills()
+            } catch (_: Exception) {
             } finally {
                 _loading.value = false
             }
@@ -37,16 +34,14 @@ class SkillsViewModel @Inject constructor(
     fun toggleSkill(name: String) {
         viewModelScope.launch {
             try {
-                val api = authManager.api
                 val skill = _skills.value.find { it.name == name }
                 val enabled = skill?.enabled != true
-                api.toggleSkill(com.google.gson.JsonObject().apply {
+                authManager.api.toggleSkill(com.google.gson.JsonObject().apply {
                     addProperty("name", name)
                     addProperty("enabled", enabled)
                 })
                 loadSkills()
-            } catch (e: Exception) {
-                // Error handling
+            } catch (_: Exception) {
             }
         }
     }

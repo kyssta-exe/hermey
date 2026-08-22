@@ -10,14 +10,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.kyssta.hermey.auth.AuthManager
-import com.kyssta.hermey.navigation.Screen
 import com.kyssta.hermey.networking.SessionSummary
 import com.kyssta.hermey.ui.HermesColors
 import com.kyssta.hermey.ui.viewmodels.SessionsViewModel
-import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.launch
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -29,11 +24,9 @@ fun SessionsScreen(
     val sessionsVm: SessionsViewModel = viewModel()
     val sessions by sessionsVm.sessions.collectAsState()
     val loading by sessionsVm.loading.collectAsState()
-    val scope = rememberCoroutineScope()
+    val error by sessionsVm.error.collectAsState()
 
-    LaunchedEffect(Unit) {
-        scope.launch { sessionsVm.loadSessions() }
-    }
+    LaunchedEffect(Unit) { sessionsVm.loadSessions() }
 
     Scaffold(
         topBar = {
@@ -44,9 +37,7 @@ fun SessionsScreen(
                     titleContentColor = HermesColors.OnSurface
                 ),
                 actions = {
-                    IconButton(onClick = { scope.launch { sessionsVm.loadSessions() } }) {
-                        Text("⟳", style = MaterialTheme.typography.headlineSmall)
-                    }
+                    TextButton(onClick = { sessionsVm.loadSessions() }) { Text("Refresh") }
                 }
             )
         },
@@ -55,37 +46,38 @@ fun SessionsScreen(
                 onClick = onNewChat,
                 containerColor = HermesColors.Primary
             ) {
-                androidx.compose.material3.Text("+", style = MaterialTheme.typography.headlineMedium, color = HermesColors.OnPrimary)
+                Text("+", style = MaterialTheme.typography.headlineMedium, color = HermesColors.OnPrimary)
             }
         }
     ) { padding ->
-        if (loading) {
+        if (loading && sessions.isEmpty()) {
             Box(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().padding(padding),
                 contentAlignment = Alignment.Center
             ) {
                 CircularProgressIndicator()
             }
         } else if (sessions.isEmpty()) {
             Box(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().padding(padding),
                 contentAlignment = Alignment.Center
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    error?.let { Text(it, color = HermesColors.Error, style = MaterialTheme.typography.bodySmall) }
                     Text("No sessions yet", style = MaterialTheme.typography.titleMedium)
-                    Text("Start a new chat to begin", style = MaterialTheme.typography.bodyMedium)
+                    Text("Tap + to start a new chat", style = MaterialTheme.typography.bodyMedium)
                 }
             }
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(padding),
-                contentPadding = PaddingValues(16.dp),
+                contentPadding = PaddingValues(16.dp, 16.dp, 16.dp, 96.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(sessions) { session ->
+                items(sessions, key = { it.id ?: "?" }) { session ->
                     SessionCard(
                         session = session,
-                        onClick = { onSessionClick(session.sessionId ?: "") }
+                        onClick = { session.id?.let(onSessionClick) }
                     )
                 }
             }
@@ -94,30 +86,39 @@ fun SessionsScreen(
 }
 
 @Composable
-fun SessionCard(
-    session: SessionSummary,
-    onClick: () -> Unit
-) {
+fun SessionCard(session: SessionSummary, onClick: () -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = HermesColors.Glass)
     ) {
-        Column(
-            modifier = Modifier.padding(16.dp)
-        ) {
+        Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = session.title ?: "New Session",
+                text = session.title?.ifBlank { null } ?: "New Session",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Medium,
-                color = HermesColors.OnSurface
+                color = HermesColors.OnSurface,
+                maxLines = 1
             )
-            Text(
-                text = "${session.model ?: "default"} · ${session.messageCount ?: 0} messages",
-                style = MaterialTheme.typography.bodySmall,
-                color = HermesColors.OnSurfaceVariant
-            )
+            if (!session.preview.isNullOrBlank()) {
+                Text(
+                    text = session.preview!!,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = HermesColors.OnSurfaceVariant,
+                    maxLines = 2
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                session.model?.let {
+                    Text(it, style = MaterialTheme.typography.labelSmall, color = HermesColors.Primary, maxLines = 1)
+                }
+                Text(
+                    text = "${session.messageCount ?: 0} messages",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = HermesColors.OnSurfaceVariant
+                )
+            }
         }
     }
 }

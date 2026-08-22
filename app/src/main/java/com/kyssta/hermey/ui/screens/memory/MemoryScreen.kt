@@ -2,31 +2,24 @@ package com.kyssta.hermey.ui.screens.memory
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.kyssta.hermey.networking.MemoryEntry
 import com.kyssta.hermey.ui.HermesColors
 import com.kyssta.hermey.ui.viewmodels.MemoryViewModel
-import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.launch
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MemoryScreen() {
     val memoryVm: MemoryViewModel = viewModel()
-    val facts by memoryVm.facts.collectAsState()
+    val memory by memoryVm.memory.collectAsState()
     val loading by memoryVm.loading.collectAsState()
-    val scope = rememberCoroutineScope()
+    val error by memoryVm.error.collectAsState()
 
-    LaunchedEffect(Unit) {
-        scope.launch { memoryVm.loadFacts() }
-    }
+    LaunchedEffect(Unit) { memoryVm.loadMemory() }
 
     Scaffold(
         topBar = {
@@ -40,12 +33,8 @@ fun MemoryScreen() {
         }
     ) { padding ->
         if (loading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
-            }
-        } else if (facts.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("No memory facts stored", style = MaterialTheme.typography.titleMedium)
             }
         } else {
             LazyColumn(
@@ -53,44 +42,39 @@ fun MemoryScreen() {
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(facts) { fact ->
-                    FactCard(fact = fact)
+                error?.let {
+                    item { Text(it, color = HermesColors.Error, style = MaterialTheme.typography.bodySmall) }
                 }
-            }
-        }
-    }
-}
-
-@Composable
-fun FactCard(fact: MemoryEntry) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = HermesColors.Glass)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = fact.entity ?: "General",
-                style = MaterialTheme.typography.labelSmall,
-                color = HermesColors.Primary
-            )
-            Text(
-                text = fact.content ?: "",
-                style = MaterialTheme.typography.bodyMedium,
-                color = HermesColors.OnSurface
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                fact.category?.let { cat ->
-                    Text(text = cat, style = MaterialTheme.typography.labelSmall, color = HermesColors.OnSurfaceVariant)
+                item {
+                    Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = HermesColors.Glass)) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text("Active provider", style = MaterialTheme.typography.labelSmall, color = HermesColors.Primary)
+                            Text(
+                                text = memory?.active?.ifBlank { null } ?: "none",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = HermesColors.OnSurface
+                            )
+                        }
+                    }
                 }
-                fact.trust?.let { trust ->
-                    Text(
-                        text = "Trust: %.1f".format(trust),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = HermesColors.OnSurfaceVariant
-                    )
+                val files = memory?.builtinFiles.orEmpty()
+                if (files.isEmpty()) {
+                    item {
+                        Text("No built-in memory files yet — they grow as the agent remembers.", color = HermesColors.OnSurfaceVariant)
+                    }
+                } else {
+                    items(files.size) { i ->
+                        val (name, size) = files.entries.sortedBy { it.key }[i]
+                        Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = HermesColors.Glass)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(name, style = MaterialTheme.typography.bodyMedium, color = HermesColors.OnSurface)
+                                Text("${size / 1024} KB", style = MaterialTheme.typography.bodySmall, color = HermesColors.OnSurfaceVariant)
+                            }
+                        }
+                    }
                 }
             }
         }

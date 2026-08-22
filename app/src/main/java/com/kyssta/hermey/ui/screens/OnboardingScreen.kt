@@ -35,7 +35,7 @@ fun OnboardingScreen(
     var serverUrl by remember { mutableStateOf("") }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    var testing by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
     var authStage by remember { mutableStateOf(AuthStage.Url) }
     var availableProviders by remember { mutableStateOf<List<AuthProvider>>(emptyList()) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -44,35 +44,42 @@ fun OnboardingScreen(
     val authVm: AuthViewModel = viewModel()
     val context = LocalContext.current
 
-    LaunchedEffect(authVm.lastError) {
-        authVm.lastError.value?.let { onError(it) }
-    }
-
     fun doConnect(url: String) {
         scope.launch {
             focusManager.clearFocus()
-            testing = true
+            busy = true
             errorMessage = null
             authVm.testConnection(url).collect { result ->
                 result.onSuccess { providers ->
-                    availableProviders = providers.providers
-                    authStage = AuthStage.Providers
+                    availableProviders = providers.providers.filter {
+                        it.supportsPassword == true || it.name == "nous"
+                    }
+                    if (availableProviders.isEmpty()) {
+                        errorMessage = "This server offers no supported login methods"
+                    } else {
+                        // Single password provider (the common case): skip straight to credentials.
+                        if (availableProviders.size == 1 && availableProviders[0].supportsPassword == true) {
+                            authStage = AuthStage.Credentials
+                        } else {
+                            authStage = AuthStage.Providers
+                        }
+                    }
                 }.onFailure { errorMessage = it.message ?: "Connection failed" }
             }
-            testing = false
+            busy = false
         }
     }
 
     fun doLogin(url: String, user: String, pass: String, prov: String) {
         scope.launch {
             focusManager.clearFocus()
-            testing = true
+            busy = true
             errorMessage = null
             authVm.login(url, user, pass, prov).collect { loginResult ->
                 loginResult.onSuccess { onLoggedIn() }
                     .onFailure { errorMessage = it.message ?: "Login failed" }
             }
-            testing = false
+            busy = false
         }
     }
 
@@ -109,11 +116,6 @@ fun OnboardingScreen(
                         style = MaterialTheme.typography.headlineSmall,
                         color = HermesColors.OnBackground
                     )
-                    Text(
-                        "Enter the URL of your self-hosted hermes-webui server",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = HermesColors.OnSurfaceVariant
-                    )
 
                     OutlinedTextField(
                         value = serverUrl,
@@ -131,9 +133,9 @@ fun OnboardingScreen(
                     Button(
                         onClick = { doConnect(serverUrl) },
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = !testing && serverUrl.isNotEmpty()
+                        enabled = !busy && serverUrl.isNotEmpty()
                     ) {
-                        if (testing) {
+                        if (busy) {
                             CircularProgressIndicator(modifier = Modifier.size(20.dp), color = HermesColors.OnPrimary)
                         } else {
                             Text("Connect")
@@ -151,15 +153,16 @@ fun OnboardingScreen(
                     availableProviders.forEach { provider ->
                         Button(
                             onClick = {
-                                if (provider.name == "basic" && provider.supportsPassword == true) {
+                                if (provider.supportsPassword == true) {
                                     authStage = AuthStage.Credentials
                                 } else if (provider.name == "nous") {
-                                    val oauthUrl = "$serverUrl/auth/login?provider=nous"
-                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(oauthUrl)))
+                                    context.startActivity(
+                                        Intent(Intent.ACTION_VIEW, Uri.parse("$serverUrl/auth/login?provider=nous"))
+                                    )
                                 }
                             },
                             modifier = Modifier.fillMaxWidth(),
-                            enabled = !testing
+                            enabled = !busy
                         ) {
                             Text(provider.displayName ?: provider.name ?: "Unknown")
                         }
@@ -214,16 +217,16 @@ fun OnboardingScreen(
                             }
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = !testing && username.isNotEmpty() && password.isNotEmpty()
+                        enabled = !busy && username.isNotEmpty() && password.isNotEmpty()
                     ) {
-                        if (testing) {
+                        if (busy) {
                             CircularProgressIndicator(modifier = Modifier.size(20.dp), color = HermesColors.OnPrimary)
                         } else {
                             Text("Login")
                         }
                     }
 
-                    OutlinedButton(onClick = { authStage = AuthStage.Providers }) {
+                    OutlinedButton(onClick = { authStage = AuthStage.Url; errorMessage = null }) {
                         Text("Cancel")
                     }
                 }

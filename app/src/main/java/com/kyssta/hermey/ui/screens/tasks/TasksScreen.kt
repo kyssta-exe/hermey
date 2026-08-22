@@ -12,8 +12,6 @@ import androidx.compose.ui.unit.dp
 import com.kyssta.hermey.networking.CronJob
 import com.kyssta.hermey.ui.HermesColors
 import com.kyssta.hermey.ui.viewmodels.TasksViewModel
-import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.launch
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -22,11 +20,8 @@ fun TasksScreen() {
     val tasksVm: TasksViewModel = viewModel()
     val jobs by tasksVm.jobs.collectAsState()
     val loading by tasksVm.loading.collectAsState()
-    val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) {
-        scope.launch { tasksVm.loadCrons() }
-    }
+    LaunchedEffect(Unit) { tasksVm.loadCrons() }
 
     Scaffold(
         topBar = {
@@ -40,11 +35,11 @@ fun TasksScreen() {
         }
     ) { padding ->
         if (loading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
         } else if (jobs.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 Text("No scheduled tasks", style = MaterialTheme.typography.titleMedium)
             }
         } else {
@@ -53,8 +48,8 @@ fun TasksScreen() {
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(jobs) { job ->
-                    TaskCard(job = job)
+                items(jobs, key = { it.id ?: it.name ?: "?" }) { job ->
+                    TaskCard(job = job, onToggle = { paused -> job.id?.let { tasksVm.toggleJob(it, paused) } })
                 }
             }
         }
@@ -62,7 +57,8 @@ fun TasksScreen() {
 }
 
 @Composable
-fun TaskCard(job: CronJob) {
+fun TaskCard(job: CronJob, onToggle: (currentlyPaused: Boolean) -> Unit) {
+    val paused = job.isPaused()
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = HermesColors.Glass)
@@ -74,26 +70,33 @@ fun TaskCard(job: CronJob) {
                 fontWeight = FontWeight.Medium,
                 color = HermesColors.OnSurface
             )
-            Text(
-                text = job.prompt ?: "",
-                style = MaterialTheme.typography.bodySmall,
-                color = HermesColors.OnSurfaceVariant,
-                maxLines = 2
-            )
+            if (!job.prompt.isNullOrBlank()) {
+                Text(
+                    text = job.prompt!!,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = HermesColors.OnSurfaceVariant,
+                    maxLines = 2
+                )
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Schedule: ${job.schedule ?: "manual"}",
+                    text = "Schedule: ${job.scheduleLabel()}",
                     style = MaterialTheme.typography.labelSmall,
                     color = HermesColors.OnSurfaceVariant
                 )
-                Text(
-                    text = if (job.enabled == true) "Active" else "Paused",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (job.enabled == true) HermesColors.Success else HermesColors.Outline
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = if (paused) "Paused" else "Active",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (paused) HermesColors.Outline else HermesColors.Success
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Switch(checked = !paused, onCheckedChange = { onToggle(paused) })
+                }
             }
         }
     }

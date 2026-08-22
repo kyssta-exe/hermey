@@ -9,12 +9,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.kyssta.hermey.auth.AuthManager
-import com.kyssta.hermey.networking.*
+import com.kyssta.hermey.networking.ChatMessage
 import com.kyssta.hermey.ui.HermesColors
 import com.kyssta.hermey.ui.viewmodels.ChatViewModel
-import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.launch
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -28,29 +25,24 @@ fun ChatScreen(
     val input by chatVm.input.collectAsState()
     val streaming by chatVm.streaming.collectAsState()
     val loading by chatVm.loading.collectAsState()
-    val scope = rememberCoroutineScope()
+    val error by chatVm.error.collectAsState()
     val listState = rememberLazyListState()
 
+    // Blank id = new chat; non-blank = load the stored transcript once.
     LaunchedEffect(sessionId) {
-        if (sessionId.isNotEmpty()) {
-            chatVm.loadSession(sessionId)
-        }
+        if (sessionId.isEmpty()) chatVm.startNewChat() else chatVm.loadSession(sessionId)
     }
 
     LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size - 1)
-        }
+        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1)
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(chatVm.currentTitle.value ?: "Chat") },
+                title = { Text(chatVm.currentTitle.collectAsState().value ?: "Chat") },
                 navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Text("←", style = MaterialTheme.typography.titleLarge)
-                    }
+                    IconButton(onClick = onNavigateBack) { Text("←", style = MaterialTheme.typography.titleLarge) }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = HermesColors.Surface,
@@ -62,14 +54,14 @@ fun ChatScreen(
             ChatInputBar(
                 input = input,
                 onInputChanged = { chatVm.updateInput(it) },
-                onSend = { scope.launch { chatVm.sendMessage() } },
+                onSend = { chatVm.sendMessage() },
                 streaming = streaming,
                 onCancel = { chatVm.cancelStream() }
             )
         }
     ) { padding ->
         if (loading && messages.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
         } else {
@@ -79,14 +71,9 @@ fun ChatScreen(
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(messages) { msg ->
-                    MessageBubble(message = msg)
-                }
-                if (streaming) {
-                    item {
-                        StreamingIndicator()
-                    }
-                }
+                items(messages) { msg -> MessageBubble(message = msg) }
+                if (streaming) item { StreamingIndicator() }
+                error?.let { item { Text(it, color = HermesColors.Error, style = MaterialTheme.typography.bodySmall) } }
             }
         }
     }
@@ -156,9 +143,7 @@ fun MessageBubble(message: ChatMessage) {
 
 @Composable
 fun StreamingIndicator() {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = HermesColors.Glass)
-    ) {
+    Card(colors = CardDefaults.cardColors(containerColor = HermesColors.Glass)) {
         Row(
             modifier = Modifier.padding(12.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
